@@ -9,7 +9,7 @@
     <properties>
         <junit.version>4.10</junit.version>
         <java.version>1.7</java.version>
-        <jest.version>0.1.6</jest.version>
+        <jest.version>1.0.1</jest.version>
         <commons.cli.version>1.3.1</commons.cli.version>
         <system.rules.version>1.12.1</system.rules.version>
         <jar.version>2.1</jar.version>

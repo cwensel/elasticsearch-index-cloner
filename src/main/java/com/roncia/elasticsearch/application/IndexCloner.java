@@ -118,7 +118,13 @@ public class IndexCloner {
             String id = h.get("_id").getAsString();
             String t = h.get("_type").getAsString();
             String source = h.get("_source").getAsJsonObject().toString();
-            Index index = new Index.Builder(source).index(indexDst).type(t).id(id).build();
+            Index index = new Index.Builder(source)
+              .index(indexDst)
+              .type(t)
+              .id(id)
+              .setParameter(Parameters.ROUTING, id)
+              .build();
+
             bulk.addAction(index);
         }
         return bulk;
