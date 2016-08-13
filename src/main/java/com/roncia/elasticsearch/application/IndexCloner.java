@@ -211,8 +211,10 @@ public class IndexCloner {
     private static void cloneData(JestClient src, JestClient dst, String indexSrc, String indexDst) throws IOException {
         logInformation("cloning data phase started");
 
+        long startTime = System.currentTimeMillis();
+        long totalAvail = 0;
         int from = 0;
-        int sizePage = 100;
+        int sizePage = 1000;
         int nHits = 0;
         int totHits = 0;
         int totalConflicts = 0;
@@ -240,7 +242,12 @@ public class IndexCloner {
                 ret = src.execute(scroll);
             }
 
-            JsonArray hits = ret.getJsonObject().get("hits").getAsJsonObject().get("hits").getAsJsonArray();
+            JsonElement result = ret.getJsonObject().get("hits");
+
+            if (totalAvail == 0)
+                totalAvail = result.getAsJsonObject().get("total").getAsLong();
+
+            JsonArray hits = result.getAsJsonObject().get("hits").getAsJsonArray();
             nHits = hits.size();
             if (nHits == 0) {
                 break;
@@ -264,7 +271,16 @@ public class IndexCloner {
 
             boolean hasErrors = results.has("errors") && results.getAsJsonPrimitive("errors").getAsBoolean();
 
-            if (hasErrors) {
+            if (!hasErrors) {
+
+                long currentDuration =  System.currentTimeMillis() - startTime;
+
+                long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
+
+                logInformation("available: " + totalAvail + " batch size: " + nHits +
+                        " remaining: " + (totalAvail - totHits) + " complete: " + (int) (totHits / totalAvail) * 100 +
+                        " remaining time: " + formatDurationHMSms(remainingDuration));
+            } else {
                 JsonArray items = results.getAsJsonArray("items");
 
                 for (JsonElement item : items) {
@@ -307,4 +323,13 @@ public class IndexCloner {
         LOGGER.log(Level.INFO, message);
     }
 
+    public static String formatDurationHMSms(long duration) {
+        long ms = duration % 1000;
+        long durationSeconds = duration / 1000;
+        long seconds = durationSeconds % 60;
+        long minutes = (durationSeconds / 60) % 60;
+        long hours = durationSeconds / 60 / 60;
+
+        return String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms);
+    }
 }
