@@ -21,7 +21,8 @@ import io.searchbox.indices.mapping.GetMapping;
 import io.searchbox.indices.mapping.PutMapping;
 import io.searchbox.indices.settings.GetSettings;
 import io.searchbox.params.Parameters;
-import org.apache.commons.cli.*;
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.ParseException;
 import org.apache.commons.lang3.time.DurationFormatUtils;
 
 import java.io.IOException;
@@ -117,13 +118,16 @@ public class IndexCloner {
             JsonObject h = hit.getAsJsonObject();
             String id = h.get("_id").getAsString();
             String t = h.get("_type").getAsString();
+            long version = h.get("_version").getAsLong();
             String source = h.get("_source").getAsJsonObject().toString();
             Index index = new Index.Builder(source)
-              .index(indexDst)
-              .type(t)
-              .id(id)
-              .setParameter(Parameters.ROUTING, id)
-              .build();
+                    .index(indexDst)
+                    .type(t)
+                    .id(id)
+                    .setParameter(Parameters.ROUTING, id)
+                    .setParameter(Parameters.VERSION, version)
+                    .setParameter(Parameters.VERSION_TYPE, "external")
+                    .build();
 
             bulk.addAction(index);
         }
@@ -209,8 +213,10 @@ public class IndexCloner {
 
         int from = 0;
         int sizePage = 100;
-        int nHits;
+        int nHits = 0;
         int totHits = 0;
+        int totalConflicts = 0;
+        int totalUnknown = 0;
 
         String scrollId = null;
         JestResult ret;
@@ -220,7 +226,9 @@ public class IndexCloner {
             if (scrollId == null) {
                 String query = "{\"size\": " + sizePage + ", \"from\": " + from + "}";
                 Search search = new Search.Builder(query).addIndex(indexSrc).setParameter(Parameters.SIZE, sizePage)
-                        .setParameter(Parameters.SCROLL, "5m").build();
+                        .setParameter(Parameters.SCROLL, "5m")
+                        .setParameter(Parameters.VERSION, true)
+                        .build();
                 ret = src.execute(search);
                 scrollId = ret.getJsonObject().get("_scroll_id").getAsString();
             }
@@ -251,9 +259,35 @@ public class IndexCloner {
                 logInformation(new Timestamp(System.currentTimeMillis()).toString());
                 e.printStackTrace();
             }
+
+            JsonObject results = response.getJsonObject();
+
+            boolean hasErrors = results.has("errors") && results.getAsJsonPrimitive("errors").getAsBoolean();
+
+            if (hasErrors) {
+                JsonArray items = results.getAsJsonArray("items");
+
+                for (JsonElement item : items) {
+                    String error = item.getAsJsonObject().getAsJsonObject("index").getAsJsonPrimitive("error").getAsString();
+
+                    // VersionConflictEngineException[[cascading_4_old][0] [flow][FCC1A713CF01954D6C29501A777FDF5C]: version conflict, current [-1], provided [1455630167879]]
+                    if (error != null && error.startsWith("VersionConflictEngineException")) {
+                        logInformation("version conflict: " + error);
+                        totalConflicts++;
+                    } else {
+                        logInformation("unknown error: " + error);
+                        totalUnknown++;
+                    }
+
+
+                }
+            }
+
 //            logResponse(response);
         }
-        logInformation("Copied successfully " + totHits + " documents");
+        logInformation("Copied successfully " + (totHits - totalConflicts - totalUnknown) + " documents");
+        logInformation("Conflict errors " + totalConflicts);
+        logInformation("Unknown errors " + totalUnknown);
         logInformation("cloning data phase finished");
     }
 
