@@ -274,10 +274,9 @@ public class IndexCloner {
             if (!hasErrors) {
 
                 long currentDuration =  System.currentTimeMillis() - startTime;
-
                 long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
 
-                logInformation("available: " + totalAvail + " batch size: " + nHits +
+                System.out.println("available: " + totalAvail + " batch size: " + nHits +
                         " remaining: " + (totalAvail - totHits) + " complete: " + (int) (totHits / totalAvail) * 100 +
                         " remaining time: " + formatDurationHMSms(remainingDuration));
             } else {
