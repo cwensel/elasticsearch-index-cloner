@@ -73,6 +73,7 @@ public class CommandLineUtil {
         options.addOption(Option.builder("dstIndexReplicas").hasArg().desc("destination: index number of replicas").build());
         options.addOption(Option.builder("dstIndexShards").hasArg().desc("destination: index number of shards").build());
         options.addOption(Option.builder("keepDstIndex").hasArg().desc("delete destination index if already existing").build());
+        options.addOption(Option.builder("timestamp").hasArg().desc("all documents with this or lesser _timestamp value").build());
         return options;
     }
 

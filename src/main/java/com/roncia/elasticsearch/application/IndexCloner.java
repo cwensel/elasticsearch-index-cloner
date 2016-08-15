@@ -53,10 +53,11 @@ public class IndexCloner {
         CommandLine cmd = getCommandLine(args);
         String srcIndex = cmd.getOptionValue("srcIndex");
         String dstIndex = cmd.getOptionValue("dstIndex");
+        String startTimestamp = cmd.getOptionValue("timestamp");
         JestClient src = getClient("srcHost", "srcUser", "srcPwd", cmd);
         JestClient dst = getClient("dstHost", "dstUser", "dstPwd", cmd);
         createDestinationIndexFromSource(srcIndex, dstIndex, src, dst, cmd);
-        cloneData(src, dst, srcIndex, dstIndex);
+        cloneData(src, dst, srcIndex, dstIndex, startTimestamp);
         logDuration(time);
     }
 
@@ -216,7 +217,7 @@ public class IndexCloner {
         }
     }
 
-    private static void cloneData(JestClient src, JestClient dst, String indexSrc, String indexDst) throws IOException {
+    private static void cloneData(JestClient src, JestClient dst, String indexSrc, String indexDst, String startTimestamp) throws IOException {
         logInformation("cloning data phase started");
 
         long startTime = System.currentTimeMillis();
@@ -234,7 +235,11 @@ public class IndexCloner {
 
             // Only on first page: Query
             if (scrollId == null) {
-                String query = "{\"size\": " + sizePage + ", \"from\": " + from + "}";
+                String query = "{\"query\":{\"match_all\":{}}}";
+
+                if (startTimestamp != null)
+                    query = "{\"query\":{\"range\":{\"_timestamp\":{\"lte\":" + startTimestamp + "}}}}";
+
                 Search search = new Search.Builder(query).addIndex(indexSrc).setParameter(Parameters.SIZE, sizePage)
                         .setParameter(Parameters.SCROLL, "5m")
                         .setParameter(Parameters.VERSION, true)
