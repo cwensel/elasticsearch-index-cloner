@@ -222,7 +222,6 @@ public class IndexCloner {
 
         long startTime = System.currentTimeMillis();
         long totalAvail = 0;
-        int from = 0;
         int sizePage = 250;
         int nHits = 0;
         int totHits = 0;
@@ -290,7 +289,12 @@ public class IndexCloner {
                 JsonArray items = results.getAsJsonArray("items");
 
                 for (JsonElement item : items) {
-                    String error = item.getAsJsonObject().getAsJsonObject("index").getAsJsonPrimitive("error").getAsString();
+                    JsonObject index = item.getAsJsonObject().getAsJsonObject("index");
+
+                    if (index.getAsJsonPrimitive("error") == null)
+                        continue;
+
+                    String error = index.getAsJsonPrimitive("error").getAsString();
 
                     // VersionConflictEngineException[[cascading_4_old][0] [flow][FCC1A713CF01954D6C29501A777FDF5C]: version conflict, current [-1], provided [1455630167879]]
                     if (error != null && error.startsWith("VersionConflictEngineException")) {
