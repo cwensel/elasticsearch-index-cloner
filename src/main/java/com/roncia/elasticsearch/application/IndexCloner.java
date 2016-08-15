@@ -304,10 +304,10 @@ public class IndexCloner {
                     String error = index.getAsJsonPrimitive("error").getAsString();
 
                     // VersionConflictEngineException[[cascading_4_old][0] [flow][FCC1A713CF01954D6C29501A777FDF5C]: version conflict, current [-1], provided [1455630167879]]
-                    if (error != null && error.startsWith("VersionConflictEngineException")) {
+                    if (error != null && error.contains("VersionConflictEngineException")) {
                         logInformation("version conflict: " + error);
                         totalConflicts++;
-                    } else if (error != null && error.startsWith("EsRejectedExecutionException")) { // EsRejectedExecutionException
+                    } else if (error != null && error.contains("EsRejectedExecutionException")) { // EsRejectedExecutionException
                         logInformation("rejected bulk put, will sleep 10 seconds: " + error);
                         totalRejections++;
                         lastBatchWasRejected = true;
