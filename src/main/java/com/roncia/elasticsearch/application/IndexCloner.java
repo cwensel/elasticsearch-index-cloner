@@ -281,18 +281,7 @@ public class IndexCloner {
 
             boolean hasErrors = results.has("errors") && results.getAsJsonPrimitive("errors").getAsBoolean();
 
-            if (!hasErrors) {
-
-                long currentDuration = System.currentTimeMillis() - startTime;
-                long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
-
-                System.out.println("available: " + totalAvail +
-                        " batch size: " + nHits +
-                        " remaining: " + (totalAvail - totHits) +
-                        " min ts: " + minTimestamp +
-                        " complete: " + (int) (totHits / totalAvail) * 100 +
-                        " remaining time: " + formatDurationHMSms(remainingDuration));
-            } else {
+            if (hasErrors) {
                 JsonArray items = results.getAsJsonArray("items");
 
                 for (JsonElement item : items) {
@@ -306,10 +295,21 @@ public class IndexCloner {
                         logInformation("unknown error: " + error);
                         totalUnknown++;
                     }
-
-
                 }
             }
+
+            long currentDuration = System.currentTimeMillis() - startTime;
+            long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
+
+            System.out.println("available: " + totalAvail +
+                    " batch size: " + nHits +
+                    " remaining: " + (totalAvail - totHits) +
+                    " min ts: " + minTimestamp +
+                    " complete: " + (int) (totHits / totalAvail) * 100 +
+                    " conflicts: " + totalConflicts +
+                    " other errors: " + totalUnknown +
+                    " remaining time: " + formatDurationHMSms(remainingDuration));
+
 
 //            logResponse(response);
         }
