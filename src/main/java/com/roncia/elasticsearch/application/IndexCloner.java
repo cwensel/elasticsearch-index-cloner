@@ -226,35 +226,42 @@ public class IndexCloner {
         int nHits = 0;
         int totHits = 0;
         int totalConflicts = 0;
+        int totalRejections = 0;
         int totalUnknown = 0;
 
+        boolean lastBatchWasRejected = false;
+
         String scrollId = null;
-        JestResult ret;
+        JestResult ret = null;
         while (true) {
 
-            // Only on first page: Query
-            if (scrollId == null) {
-                String query = "{\"query\":{\"match_all\":{}}}";
+            if (ret == null || !lastBatchWasRejected) { // allows us to retry the last fetch if any items were rejected
+                // Only on first page: Query
+                if (scrollId == null) {
+                    String query = "{\"query\":{\"match_all\":{}}}";
 
-                if (startTimestamp != null)
-                    query = "{\"query\":{\"range\":{\"_timestamp\":{\"lte\":" + startTimestamp + "}}}}";
+                    if (startTimestamp != null)
+                        query = "{\"query\":{\"range\":{\"_timestamp\":{\"lte\":" + startTimestamp + "}}}}";
 
-                Search search = new Search.Builder(query).addIndex(indexSrc).setParameter(Parameters.SIZE, sizePage)
-                        .setParameter(Parameters.SCROLL, "5m")
-                        .setParameter(Parameters.VERSION, true)
-                        .setParameter(Parameters.TIMESTAMP, true)
-                        .addSort(new Sort("_timestamp", Sort.Sorting.DESC))
-                        .build();
-                ret = src.execute(search);
-                scrollId = ret.getJsonObject().get("_scroll_id").getAsString();
+                    Search search = new Search.Builder(query).addIndex(indexSrc).setParameter(Parameters.SIZE, sizePage)
+                            .setParameter(Parameters.SCROLL, "5m")
+                            .setParameter(Parameters.VERSION, true)
+                            .setParameter(Parameters.TIMESTAMP, true)
+                            .addSort(new Sort("_timestamp", Sort.Sorting.DESC))
+                            .build();
+                    ret = src.execute(search);
+                    scrollId = ret.getJsonObject().get("_scroll_id").getAsString();
+                }
+                // Since second page: Scroll
+                else {
+                    SearchScroll scroll = new SearchScroll.Builder(scrollId, "5m")
+                            .setParameter(Parameters.SIZE, sizePage).build();
+
+                    ret = src.execute(scroll);
+                }
             }
-            // Since second page: Scroll
-            else {
-                SearchScroll scroll = new SearchScroll.Builder(scrollId, "5m")
-                        .setParameter(Parameters.SIZE, sizePage).build();
 
-                ret = src.execute(scroll);
-            }
+            lastBatchWasRejected = false;
 
             JsonElement result = ret.getJsonObject().get("hits");
 
@@ -267,7 +274,6 @@ public class IndexCloner {
                 break;
             }
 
-            totHits += nHits;
             Builder bulk = bulkRequestBuilder(indexDst, hits);
 
             JestResult response = null;
@@ -279,6 +285,7 @@ public class IndexCloner {
                 logInformation(" ------ socket exp");
                 logInformation(new Timestamp(System.currentTimeMillis()).toString());
                 e.printStackTrace();
+                continue; // loop back around again
             }
 
             JsonObject results = response.getJsonObject();
@@ -300,12 +307,25 @@ public class IndexCloner {
                     if (error != null && error.startsWith("VersionConflictEngineException")) {
                         logInformation("version conflict: " + error);
                         totalConflicts++;
+                    } else if (error != null && error.startsWith("EsRejectedExecutionException")) { // EsRejectedExecutionException
+                        logInformation("rejected bulk put, will sleep 10 seconds: " + error);
+                        totalRejections++;
+                        lastBatchWasRejected = true;
+                        try {
+                            Thread.sleep(10 * 1000);
+                        } catch (InterruptedException e) {
+                            // do nothing
+                        }
+                        break;
                     } else {
                         logInformation("unknown error: " + error);
                         totalUnknown++;
                     }
                 }
             }
+
+            if (!lastBatchWasRejected) // don't double count, will try again
+                totHits += nHits;
 
             long currentDuration = System.currentTimeMillis() - startTime;
             long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
@@ -314,7 +334,8 @@ public class IndexCloner {
                     " batch size: " + nHits +
                     " remaining: " + (totalAvail - totHits) +
                     " min ts: " + minTimestamp +
-                    " complete: " + (int) (totHits / totalAvail) * 100 +
+                    " complete: " + Math.round(((float) totHits / (float) totalAvail) * 100.0) + "%" +
+                    " rejections: " + totalRejections + // count put puts that rejected
                     " conflicts: " + totalConflicts +
                     " other errors: " + totalUnknown +
                     " remaining time: " + formatDurationHMSms(remainingDuration));
