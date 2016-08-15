@@ -15,6 +15,7 @@ import io.searchbox.core.Bulk.Builder;
 import io.searchbox.core.Index;
 import io.searchbox.core.Search;
 import io.searchbox.core.SearchScroll;
+import io.searchbox.core.search.sort.Sort;
 import io.searchbox.indices.CreateIndex;
 import io.searchbox.indices.DeleteIndex;
 import io.searchbox.indices.mapping.GetMapping;
@@ -35,6 +36,8 @@ import java.util.logging.Logger;
 public class IndexCloner {
 
     private static final Logger LOGGER = Logger.getLogger(IndexCloner.class.getName());
+
+    private static long minTimestamp = Long.MAX_VALUE;
 
     /**
      * Index Cloner application main function
@@ -120,6 +123,10 @@ public class IndexCloner {
             String t = h.get("_type").getAsString();
             long version = h.get("_version").getAsLong();
             String source = h.get("_source").getAsJsonObject().toString();
+            long timestamp = h.getAsJsonArray("sort").get(0).getAsLong(); // could alternately add _timestamp to fields on query
+
+            minTimestamp = Math.min(minTimestamp, timestamp);
+
             Index index = new Index.Builder(source)
                     .index(indexDst)
                     .type(t)
@@ -127,6 +134,7 @@ public class IndexCloner {
                     .setParameter(Parameters.ROUTING, id)
                     .setParameter(Parameters.VERSION, version)
                     .setParameter(Parameters.VERSION_TYPE, "external")
+                    .setParameter(Parameters.TIMESTAMP, timestamp)
                     .build();
 
             bulk.addAction(index);
@@ -214,7 +222,7 @@ public class IndexCloner {
         long startTime = System.currentTimeMillis();
         long totalAvail = 0;
         int from = 0;
-        int sizePage = 1000;
+        int sizePage = 250;
         int nHits = 0;
         int totHits = 0;
         int totalConflicts = 0;
@@ -230,6 +238,8 @@ public class IndexCloner {
                 Search search = new Search.Builder(query).addIndex(indexSrc).setParameter(Parameters.SIZE, sizePage)
                         .setParameter(Parameters.SCROLL, "5m")
                         .setParameter(Parameters.VERSION, true)
+                        .setParameter(Parameters.TIMESTAMP, true)
+                        .addSort(new Sort("_timestamp", Sort.Sorting.DESC))
                         .build();
                 ret = src.execute(search);
                 scrollId = ret.getJsonObject().get("_scroll_id").getAsString();
@@ -273,11 +283,14 @@ public class IndexCloner {
 
             if (!hasErrors) {
 
-                long currentDuration =  System.currentTimeMillis() - startTime;
+                long currentDuration = System.currentTimeMillis() - startTime;
                 long remainingDuration = (currentDuration / totHits) * (totalAvail - totHits);
 
-                System.out.println("available: " + totalAvail + " batch size: " + nHits +
-                        " remaining: " + (totalAvail - totHits) + " complete: " + (int) (totHits / totalAvail) * 100 +
+                System.out.println("available: " + totalAvail +
+                        " batch size: " + nHits +
+                        " remaining: " + (totalAvail - totHits) +
+                        " min ts: " + minTimestamp +
+                        " complete: " + (int) (totHits / totalAvail) * 100 +
                         " remaining time: " + formatDurationHMSms(remainingDuration));
             } else {
                 JsonArray items = results.getAsJsonArray("items");
